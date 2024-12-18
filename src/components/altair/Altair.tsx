@@ -1,42 +1,33 @@
-/**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+
+
+
+
+
+
 import { type FunctionDeclaration, SchemaType } from "@google/generative-ai";
 import { useEffect, useRef, useState, memo } from "react";
 import vegaEmbed from "vega-embed";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
 import { ToolCall } from "../../multimodal-live-types";
 
-const declaration: FunctionDeclaration = {
-  name: "render_altair",
-  description: "Displays an altair graph in json format.",
-  parameters: {
-    type: SchemaType.OBJECT,
-    properties: {
-      json_graph: {
-        type: SchemaType.STRING,
-        description:
-          "JSON STRING representation of the graph to render. Must be a string, not a json object",
-      },
-    },
-    required: ["json_graph"],
-  },
+
+// const renderAltairDeclaration : FunctionDeclaration = {
+//   name: "render_altair",
+//   description: "Displays an Altair graph."
+// };
+
+
+
+
+
+const getUsersDeclarations: FunctionDeclaration = {
+  name: "get_users",
+  description: "Display users data"
 };
 
 function AltairComponent() {
   const [jsonString, setJSONString] = useState<string>("");
+  const [usersData, setUsersData] = useState<any>(null); // State to store user data
   const { client, setConfig } = useLiveAPIContext();
 
   useEffect(() => {
@@ -51,36 +42,51 @@ function AltairComponent() {
       systemInstruction: {
         parts: [
           {
-            text: 'You are my helpful assistant. Any time I ask you for a graph call the "render_altair" function I have provided you. Dont ask for additional information just make your best judgement.',
+            text: 'You are my helpful assistant. If I ask about users, call the "get_users" function. Do not ask for additional information, just make your best judgement.',
           },
         ],
       },
       tools: [
-        // there is a free-tier quota for search
         { googleSearch: {} },
-        { functionDeclarations: [declaration] },
+        { functionDeclarations: [getUsersDeclarations] },
       ],
     });
   }, [setConfig]);
 
   useEffect(() => {
-    const onToolCall = (toolCall: ToolCall) => {
-      console.log(`got toolcall`, toolCall);
-      const fc = toolCall.functionCalls.find(
-        (fc) => fc.name === declaration.name,
-      );
-      if (fc) {
-        const str = (fc.args as any).json_graph;
-        setJSONString(str);
+    const onToolCall = async (toolCall: ToolCall) => {
+      console.log("got toolcall", toolCall);
+
+      for (const fc of toolCall.functionCalls) {
+        switch (fc.name) {
+          case getUsersDeclarations.name:
+            {
+              try {
+                const response = await fetch(
+                  "https://rajivraghu-fabulousivorydragon.web.val.run"
+                );
+                const data = await response.json();
+                setUsersData(data);
+               // console.log("response.."+response)
+                //const obj = { name: "Rajiv", age: 30, password: "secret" };
+                const obj = { data };
+                client.sendToolResponse({ functionResponses: [{ id: fc.id, response: obj }] })
+              } catch (error) {
+                console.error("Error fetching user data:", error);
+                // Handle the error, e.g., show an error message to the user
+              }
+            }
+            break;
+        }
       }
-      // send data for the response of your tool call
-      // in this case Im just saying it was successful
+
+      // Send successful tool response
       if (toolCall.functionCalls.length) {
         setTimeout(
           () =>
             client.sendToolResponse({
               functionResponses: toolCall.functionCalls.map((fc) => ({
-                response: { output: { sucess: true } },
+                response: { output: { success: true } },
                 id: fc.id,
               })),
             }),
@@ -88,6 +94,7 @@ function AltairComponent() {
         );
       }
     };
+
     client.on("toolcall", onToolCall);
     return () => {
       client.off("toolcall", onToolCall);
@@ -101,7 +108,36 @@ function AltairComponent() {
       vegaEmbed(embedRef.current, JSON.parse(jsonString));
     }
   }, [embedRef, jsonString]);
-  return <div className="vega-embed" ref={embedRef} />;
+
+  // Conditionally render user data or the Altair graph
+  return (
+    <div>
+      {usersData ? (
+        <div>
+          {/* Display user data */}
+          <h2>Users:</h2>
+          <ul>
+            {usersData.map((user: any) => (
+              <li key={user.id}>
+                {user.name} - {user.email}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="vega-embed" ref={embedRef} />
+      )}
+    </div>
+  );
 }
 
 export const Altair = memo(AltairComponent);
+
+
+
+
+
+
+
+
+
